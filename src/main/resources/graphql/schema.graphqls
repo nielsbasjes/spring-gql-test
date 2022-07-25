@@ -1,0 +1,4 @@
+# Dummy schema is needed (no clue why)
+type Query {
+    dummy: String
+}
