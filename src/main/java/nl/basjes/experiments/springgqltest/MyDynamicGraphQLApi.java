@@ -32,7 +32,7 @@ import org.springframework.context.annotation.Configuration;
 import static graphql.schema.GraphQLFieldDefinition.newFieldDefinition;
 
 @Configuration(proxyBeanMethods = false)
-public class Experimental {
+public class MyDynamicGraphQLApi {
 
     @Bean
     GraphQlSourceBuilderCustomizer graphQlSourceBuilderCustomizer() {
@@ -85,6 +85,7 @@ public class Experimental {
                         .type(
                             TypeRuntimeWiring
                                 .newTypeWiring("Query")
+                                // Yes I know, this is silly and wrong.
                                 .dataFetcher("Query", testDataFetcher)
                                 .dataFetcher("DoSomething", testDataFetcher)
                                 .dataFetcher("Version", testDataFetcher)
