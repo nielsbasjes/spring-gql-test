@@ -19,109 +19,189 @@ package nl.basjes.experiments.springgqltest;
 
 
 import graphql.Scalars;
+import graphql.language.FieldDefinition;
+import graphql.language.Node;
+import graphql.language.NodeChildrenContainer;
+import graphql.language.ObjectTypeDefinition;
+import graphql.language.TypeDefinition;
 import graphql.schema.DataFetcher;
 import graphql.schema.GraphQLArgument;
 import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLObjectType;
-import graphql.schema.GraphQLSchema;
+import graphql.schema.TypeResolver;
+import graphql.schema.idl.RuntimeWiring;
+import graphql.schema.idl.SchemaGenerator;
+import graphql.schema.idl.SchemaParser;
+import graphql.schema.idl.SchemaPrinter;
 import graphql.schema.idl.TypeRuntimeWiring;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.springframework.boot.autoconfigure.graphql.GraphQlSourceBuilderCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+import static graphql.language.ObjectTypeDefinition.CHILD_FIELD_DEFINITIONS;
 import static graphql.schema.GraphQLFieldDefinition.newFieldDefinition;
 
 @Configuration(proxyBeanMethods = false)
 public class MyDynamicGraphQLApi {
 
+    private static final Logger LOG = LogManager.getLogger(MyDynamicGraphQLApi.class);
+
     @Bean
     GraphQlSourceBuilderCustomizer graphQlSourceBuilderCustomizer() {
         return builder -> {
 
-            GraphQLFieldDefinition commitField = newFieldDefinition()
-                .name("commit")
-                .description("The commit hash")
-                .type(Scalars.GraphQLString)
-                .build();
-
-            GraphQLFieldDefinition nameField = newFieldDefinition()
-                .name("url")
-                .description("Where can we find it")
-                .type(Scalars.GraphQLString)
-                .build();
-
+            // New type
             GraphQLObjectType version = GraphQLObjectType
                 .newObject()
                 .name("Version")
                 .description("The version info")
-                .field(commitField)
-                .field(nameField)
-                .build()
-                ;
-
-            GraphQLObjectType query = GraphQLObjectType
-                .newObject()
-                .name("Query")
-                .description("The root query")
-                .field(
-                    newFieldDefinition()
-                        .name("DoSomething")
-                        .description("It should do something here")
-                        .argument(GraphQLArgument.newArgument().name("thing").type(Scalars.GraphQLString).build())
-                        .type(version)
-                )
+                .field(newFieldDefinition()
+                    .name("commit")
+                    .description("The commit hash")
+                    .type(Scalars.GraphQLString)
+                    .build())
+                .field(newFieldDefinition()
+                    .name("url")
+                    .description("Where can we find it")
+                    .type(Scalars.GraphQLString)
+                    .build())
                 .build();
+
+            // New "function" to be put in Query
+            GraphQLFieldDefinition getVersion = newFieldDefinition()
+                .name("getVersion")
+                .description("It should return the do something here")
+                .argument(GraphQLArgument.newArgument().name("thing").type(Scalars.GraphQLString).build())
+                .type(version)
+                .build();
+
+
+            // Wiring for the new type
+            TypeRuntimeWiring typeRuntimeWiringVersion =
+                TypeRuntimeWiring
+                    .newTypeWiring("Version")
+                    .dataFetcher("commit", testDataFetcher)
+                    .dataFetcher("url", testDataFetcher)
+                    .build();
+
+            // Wiring for the new "function"
+            TypeRuntimeWiring typeRuntimeWiringQuery =
+                    TypeRuntimeWiring
+                        .newTypeWiring("Query")
+                        .dataFetcher("getVersion", getVersionDataFetcher)
+                        .build();
 
             builder
                 .schemaFactory(
-                    (typeDefinitionRegistry, runtimeWiring) ->
-                        GraphQLSchema
-                            .newSchema()
-                            .query(query)
-                            .build()
-                )
-                .configureRuntimeWiring(
-                    runtimeWiringBuilder -> runtimeWiringBuilder
-                        .type(
-                            TypeRuntimeWiring
-                                .newTypeWiring("Query")
-                                // Yes I know, this is silly and wrong.
-                                .dataFetcher("Query", testDataFetcher)
-                                .dataFetcher("DoSomething", testDataFetcher)
-                                .dataFetcher("Version", testDataFetcher)
-                                .dataFetcher("commit", testDataFetcher)
-                                .dataFetcher("url", testDataFetcher)
-                        )
-                        .type(
-                            TypeRuntimeWiring
-                                .newTypeWiring("DoSomething")
-                                .dataFetcher("Query", testDataFetcher)
-                                .dataFetcher("DoSomething", testDataFetcher)
-                                .dataFetcher("Version", testDataFetcher)
-                                .dataFetcher("commit", testDataFetcher)
-                                .dataFetcher("url", testDataFetcher)
-                        )
-                        .type(
-                            TypeRuntimeWiring
-                                .newTypeWiring("Version")
-                                .dataFetcher("Query", testDataFetcher)
-                                .dataFetcher("DoSomething", testDataFetcher)
-                                .dataFetcher("Version", testDataFetcher)
-                                .dataFetcher("commit", testDataFetcher)
-                                .dataFetcher("url", testDataFetcher)
-                        )
-                )
-            ;
+                    (typeDefinitionRegistry, runtimeWiring) -> {
+                        // NOTE: Spring-Graphql DEMANDS a schema.graphqls with a valid schema or it will not load...
+
+                        // ---------------------------------
+                        // Extending the entries in Query
+
+                        // We get the existing Query from the typeDefinitionRegistry (defined in the schema.graphqls file).
+                        ObjectTypeDefinition query = (ObjectTypeDefinition) typeDefinitionRegistry.getType("Query").orElseThrow();
+                        NodeChildrenContainer namedChildren = query.getNamedChildren();
+                        List<Node> fieldDefinitions = namedChildren.getChildren(CHILD_FIELD_DEFINITIONS);
+
+                        // We add all our new "functions" (field Definitions) that need to be added to the Query
+                        fieldDefinitions.add(convert(getVersion));
+
+                        // Add them all as extra fields to the existing Query
+                        ObjectTypeDefinition queryWithNewChildren = query.withNewChildren(namedChildren);
+
+                        // We remove the old "Query" and replace it with the version that has more children.
+                        typeDefinitionRegistry.remove(query);
+                        typeDefinitionRegistry.add(queryWithNewChildren);
+
+                        // -----------------------
+                        // Add all additional types (outside of Query)
+                        typeDefinitionRegistry.add(convert(version));
+
+                        // -----------------------
+                        // Add all additional wiring
+                        // NASTY 3: There is no simple 'addType' on an existing instance of RuntimeWiring.
+                        addType(runtimeWiring, typeRuntimeWiringQuery);
+                        addType(runtimeWiring, typeRuntimeWiringVersion);
+
+                        // Now we create the Schema.
+                        return new SchemaGenerator().makeExecutableSchema(typeDefinitionRegistry, runtimeWiring);
+                    }
+                );
         };
     }
 
-    static DataFetcher<?> testDataFetcher = environment -> "Something";
-//        "The arguments we got:" + environment
-//            .getArguments()
-//            .entrySet()
-//            .stream()
-//            .map(entry -> "{ " + entry.getKey() + " = " + entry.getValue().toString() + " }")
-//            .collect(Collectors.joining(" | "));
+
+    static DataFetcher<?> getVersionDataFetcher = environment -> {
+        String arguments = environment
+            .getArguments()
+            .entrySet()
+            .stream()
+            .map(entry -> "{ " + entry.getKey() + " = " + entry.getValue().toString() + " }")
+            .collect(Collectors.joining(" | "));
+
+        String result = "getVersion Fetch: %s(%s)".formatted(environment.getField(), arguments);
+
+        LOG.info("{}", result);
+        return result;
+    };
+
+    static DataFetcher<?> testDataFetcher = environment -> {
+        String arguments = environment
+            .getArguments()
+            .entrySet()
+            .stream()
+            .map(entry -> "{ " + entry.getKey() + " = " + entry.getValue().toString() + " }")
+            .collect(Collectors.joining(" | "));
+
+        String result = "Fetch: %s(%s)".formatted(environment.getField().getName(), arguments);
+
+        LOG.info("{}", result);
+        return result;
+    };
+
+
+    private FieldDefinition convert(GraphQLFieldDefinition field) {
+        // NASTY: So far the only way I have been able to find to this conversion is to
+        //   - wrap it in a GraphQLObjectType
+        //   - Print it
+        //   - and parse that String
+        GraphQLObjectType query = GraphQLObjectType
+                .newObject()
+                .name("DUMMY")
+                .field(field)
+                .build();
+
+        String print = new SchemaPrinter().print(query);
+        ObjectTypeDefinition dummy = (ObjectTypeDefinition)new SchemaParser().parse(print).getType("DUMMY").orElseThrow();
+        return dummy.getFieldDefinitions().get(0);
+    }
+
+    private TypeDefinition convert(GraphQLObjectType objectType) {
+        String print = new SchemaPrinter().print(objectType);
+        return new SchemaParser().parse(print).getType(objectType.getName()).orElseThrow();
+    }
+
+    // Yes, I know NASTY HACK
+    public void addType(RuntimeWiring runtimeWiring, TypeRuntimeWiring typeRuntimeWiring) {
+        Map<String, Map<String, DataFetcher>> dataFetchers = runtimeWiring.getDataFetchers();
+
+        String typeName = typeRuntimeWiring.getTypeName();
+        Map<String, DataFetcher> typeDataFetchers = dataFetchers.computeIfAbsent(typeName, k -> new LinkedHashMap<>());
+        typeDataFetchers.putAll(typeRuntimeWiring.getFieldDataFetchers());
+
+        TypeResolver typeResolver = typeRuntimeWiring.getTypeResolver();
+        if (typeResolver != null) {
+            runtimeWiring.getTypeResolvers().put(typeName, typeResolver);
+        }
+    }
 
 }
 

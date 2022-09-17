@@ -1,4 +1,5 @@
-# Dummy schema is needed (no clue why)
+# The base of the application.
 type Query {
-    dummy: String
+    # Just say hello
+    greeting: String
 }
