@@ -15,9 +15,11 @@
  * limitations under the License.
  */
 
-package nl.basjes.experiments.springgqltest.graphql.utils;
+package nl.basjes.experiments.springgqltest;
 
 import graphql.schema.GraphQLSchema;
+import graphql.schema.GraphQLTypeVisitor;
+import graphql.schema.SchemaTransformer;
 import graphql.schema.idl.SchemaGenerator;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,8 +47,10 @@ public class PatchTheGraphQLSchema {
                     GraphQLSchema schema =  new SchemaGenerator()
                         .makeExecutableSchema(typeDefinitionRegistry, runtimeWiring);
 
-                    for (GraphQLSchemaPatcher patcher : context.getBeanProvider(GraphQLSchemaPatcher.class)) {
-                        schema = patcher.patchSchema(schema);
+                    // The ordering is essentially "Random" which may cause problems if elements are deleted
+                    // or if 2 try to add the same thing.
+                    for (GraphQLTypeVisitor visitor : context.getBeanProvider(GraphQLTypeVisitor.class)) {
+                        schema = SchemaTransformer.transformSchema(schema, visitor);
                     }
                     return schema;
                 }

@@ -1,4 +1,4 @@
-package nl.basjes.experiments.springgqltest.graphql.greeting;
+package nl.basjes.experiments.springgqltest;
 
 
 import org.springframework.graphql.data.method.annotation.QueryMapping;
