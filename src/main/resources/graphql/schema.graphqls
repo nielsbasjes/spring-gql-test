@@ -1,5 +1,5 @@
 # The base of the application.
 type Query {
-    # Just say hello
+    # A greeting is returned
     greeting: String
 }

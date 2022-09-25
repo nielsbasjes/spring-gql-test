@@ -5,40 +5,46 @@ This is an experimental project.
 I want to figure out how to generate the schema and all related wiring in Java code.
 
 # Current status
-Works partially.
+Works like a charm.
 
-The schema is generated as I expect it.
-
-Yet when running this query:
-
+The base schema is only
 ```graphql
-query {
-  DoSomething(thing: "foo") {
-    commit
-    url
-  }
+# The base of the application.
+type Query {
+    # A greeting is returned
+    greeting: String
 }
 ```
 
-I expect this
+The final schema allows you to do
+```graphql
+query {
+    greeting
+    sayHello
+    getVersion(thing: "S") {
+        url
+        commit
+    }
+}
+```
+
+which in this case returns
 
 ```json
 {
   "data": {
-    "DoSomething": {
-      "commit": "Something",
-      "url": "Something"
+    "greeting": "Hello World",
+    "sayHello": "Just say hello",
+    "getVersion": {
+      "url": "Fetch: url()",
+      "commit": "Fetch: commit()"
     }
   }
 }
 ```
 
-but I get this:
 
-```json
-{
-  "data": {
-    "DoSomething": null
-  }
-}
-```
+# References
+Thanks to Brad Baker https://github.com/bbakerman :
+- https://github.com/spring-projects/spring-graphql/issues/452#issuecomment-1256798212
+- https://www.graphql-java.com/documentation/schema/#changing-schema
