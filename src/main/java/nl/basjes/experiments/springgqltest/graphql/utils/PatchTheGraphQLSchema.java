@@ -20,7 +20,6 @@ package nl.basjes.experiments.springgqltest.graphql.utils;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.idl.SchemaGenerator;
 import org.springframework.beans.BeansException;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.graphql.GraphQlSourceBuilderCustomizer;
 import org.springframework.context.ApplicationContext;
@@ -30,11 +29,11 @@ import org.springframework.context.annotation.Configuration;
 @Configuration(proxyBeanMethods = false)
 public class PatchTheGraphQLSchema {
 
-    private final ApplicationContext applicationContext;
+    private final ApplicationContext context;
 
     @Autowired
-    public PatchTheGraphQLSchema(ApplicationContext applicationContext) throws BeansException {
-        this.applicationContext = applicationContext;
+    public PatchTheGraphQLSchema(ApplicationContext context) throws BeansException {
+        this.context = context;
     }
 
     @Bean
@@ -43,11 +42,11 @@ public class PatchTheGraphQLSchema {
             .schemaFactory(
                 (typeDefinitionRegistry, runtimeWiring) -> {
                     // First we create the base Schema.
-                    GraphQLSchema schema =  new SchemaGenerator().makeExecutableSchema(typeDefinitionRegistry, runtimeWiring);
+                    GraphQLSchema schema =  new SchemaGenerator()
+                        .makeExecutableSchema(typeDefinitionRegistry, runtimeWiring);
 
-                    ObjectProvider<GraphQLSchemaPatcher> customizersProvider = applicationContext.getBeanProvider(GraphQLSchemaPatcher.class);
-                    for (GraphQLSchemaPatcher customizer : customizersProvider) {
-                        schema = customizer.patchSchema(schema);
+                    for (GraphQLSchemaPatcher patcher : context.getBeanProvider(GraphQLSchemaPatcher.class)) {
+                        schema = patcher.patchSchema(schema);
                     }
                     return schema;
                 }

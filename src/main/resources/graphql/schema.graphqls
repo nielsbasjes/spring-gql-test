@@ -1,5 +1,5 @@
-# The base of the application.
+#The base of the application.
 type Query {
-    # A greeting is returned
+    #A greeting is returned
     greeting: String
 }
